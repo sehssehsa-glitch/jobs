@@ -1,17 +1,35 @@
-<?xml version="1.0" encoding="UTF-8" ?>
-<rss version="2.0">
-<channel>
-  <title>مدونة أخصائي الصحة العامة - قسم الأخبار</title>
-  <link>https://healthprofessionalsd.blogspot.com/search/label/الأخبار</link>
-  <description>آخر التحديثات من قسم الأخبار في مدونة أخصائي الصحة العامة</description>
-  <language>ar</language>
+name: Generate Blogger RSS
 
-  <item>
-    <title>مثال: خبر جديد</title>
-    <link>https://healthprofessionalsd.blogspot.com/2025/09/sample-post.html</link>
-    <description>هذا مثال لمقال من قسم الأخبار</description>
-    <pubDate>Mon, 01 Sep 2025 20:00:00 +0300</pubDate>
-  </item>
+on:
+  schedule:
+    - cron: "0 */6 * * *"   # يحدث كل 6 ساعات
+  workflow_dispatch:        # تشغيل يدوي من Actions
 
-</channel>
-</rss>
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.x'
+
+      - name: Install dependencies
+        run: |
+          pip install requests feedgen
+
+      - name: Generate RSS
+        run: |
+          python generate_rss.py
+
+      - name: Commit & Push
+        run: |
+          git config user.name "github-actions"
+          git config user.email "actions@github.com"
+          git add feed.xml
+          git commit -m "Update feed.xml"
+          git push
