@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<rss version="2.0">
+<channel>
+  <title>مدونة أخصائي الصحة العامة - قسم الأخبار</title>
+  <link>https://healthprofessionalsd.blogspot.com/search/label/الأخبار</link>
+  <description>آخر التحديثات من قسم الأخبار في مدونة أخصائي الصحة العامة</description>
+  <language>ar</language>
+
+  <item>
+    <title>مثال: خبر جديد</title>
+    <link>https://healthprofessionalsd.blogspot.com/2025/09/sample-post.html</link>
+    <description>هذا مثال لمقال من قسم الأخبار</description>
+    <pubDate>Mon, 01 Sep 2025 20:00:00 +0300</pubDate>
+  </item>
+
+</channel>
+</rss>
