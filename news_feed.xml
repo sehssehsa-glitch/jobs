@@ -1,35 +1,149 @@
-name: Generate Blogger RSS
+<!DOCTYPE html>
+<html lang="ar">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>مولّد RSS الأخبار - HealthProfessionalsD</title>
+<style>
+  body { font-family: Arial, sans-serif; direction: rtl; background: #f4f6f8; margin:0; padding:20px; }
+  .container { max-width:1000px; margin:auto; background:#fff; padding:20px; border-radius:10px; box-shadow:0 4px 12px rgba(0,0,0,0.08);}
+  h1 { text-align:center; margin-bottom:20px; color:#333; }
+  button { padding: 10px 18px; margin:6px 0; border-radius:6px; border:none; background:#007bff; color:white; cursor:pointer; font-size:15px; }
+  button:disabled { background:#999; cursor:not-allowed; }
+  .cards { display:grid; grid-template-columns: repeat(auto-fit, minmax(280px,1fr)); gap:15px; margin-top:20px; }
+  .card { background:#fff; padding:15px; border-radius:8px; box-shadow:0 2px 6px rgba(0,0,0,0.08); display:flex; flex-direction:column; justify-content:space-between; }
+  .card h3 { margin:0 0 8px 0; font-size:18px; color:#007bff; }
+  .card p { margin:4px 0; font-size:14px; color:#555; }
+  .card a { margin-top:8px; text-decoration:none; color:#fff; background:#28a745; padding:6px 10px; border-radius:6px; font-size:14px; text-align:center; display:inline-block; }
+  pre { white-space: pre-wrap; word-wrap: break-word; background:#f0f0f0; padding:10px; border-radius:6px; max-height:400px; overflow:auto; margin-top:15px; }
+</style>
+</head>
+<body>
+<div class="container">
+  <h1>مولّد RSS الأخبار - HealthProfessionalsD</h1>
+  <button id="generateBtn">انشئ RSS</button>
+  <button id="downloadBtn" disabled>تنزيل feed.xml</button>
+  <button id="viewBtn" disabled>عرض XML</button>
 
-on:
-  schedule:
-    - cron: "0 */6 * * *"   # يحدث كل 6 ساعات
-  workflow_dispatch:        # تشغيل يدوي من Actions
+  <div class="cards" id="cardsContainer"></div>
 
-jobs:
-  build:
-    runs-on: ubuntu-latest
+  <h3>خلاصة XML الناتجة</h3>
+  <pre id="xmlOut">اضغط "انشئ RSS" لبدء العملية...</pre>
+</div>
 
-    steps:
-      - name: Checkout repo
-        uses: actions/checkout@v3
+<script>
+(function(){
+const BLOG_URL = "https://healthprofessionalsd.blogspot.com";
+const LABEL = "الأخبار";
+const MAX_RESULTS = 50;
 
-      - name: Set up Python
-        uses: actions/setup-python@v4
-        with:
-          python-version: '3.x'
+const generateBtn = document.getElementById('generateBtn');
+const downloadBtn = document.getElementById('downloadBtn');
+const viewBtn = document.getElementById('viewBtn');
+const xmlOut = document.getElementById('xmlOut');
+const cardsContainer = document.getElementById('cardsContainer');
 
-      - name: Install dependencies
-        run: |
-          pip install requests feedgen
+function escapeXml(s){ return s ? s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;') : ''; }
+function toRFC822(dateStr){ try{ return new Date(dateStr).toUTCString(); }catch(e){ return dateStr; } }
 
-      - name: Generate RSS
-        run: |
-          python generate_rss.py
+function buildRSS(meta, entries){
+  let rss = '<?xml version="1.0" encoding="utf-8"?>\n<rss version="2.0">\n<channel>\n';
+  rss += `<title>${escapeXml(meta.title)}</title>\n`;
+  rss += `<link>${escapeXml(meta.link)}</link>\n`;
+  rss += `<description>${escapeXml(meta.description)}</description>\n`;
+  rss += `<lastBuildDate>${toRFC822(meta.updated)}</lastBuildDate>\n`;
+  entries.forEach(e=>{
+    rss += '<item>\n';
+    rss += `<title>${escapeXml(e.title)}</title>\n`;
+    rss += `<link>${escapeXml(e.link)}</link>\n`;
+    if(e.author) rss += `<author>${escapeXml(e.author)}</author>\n`;
+    rss += `<pubDate>${toRFC822(e.pubDate)}</pubDate>\n`;
+    rss += `<description><![CDATA[${e.content}]]></description>\n`;
+    rss += '</item>\n';
+  });
+  rss += '</channel>\n</rss>';
+  return rss;
+}
 
-      - name: Commit & Push
-        run: |
-          git config user.name "github-actions"
-          git config user.email "actions@github.com"
-          git add feed.xml
-          git commit -m "Update feed.xml"
-          git push
+function makeBlobDownload(text){
+  const blob = new Blob([text], {type:'application/rss+xml;charset=utf-8'});
+  const url = URL.createObjectURL(blob);
+  return {url, revoke:()=>URL.revokeObjectURL(url)};
+}
+
+function fetchJSONP(url){
+  return new Promise((resolve,reject)=>{
+    const cbName = 'bp_cb_'+Math.random().toString(36).slice(2);
+    window[cbName] = function(data){ resolve(data); delete window[cbName]; script.remove(); };
+    const script = document.createElement('script');
+    script.src = url + (url.includes('?') ? '&' : '?') + 'callback=' + cbName;
+    script.onerror = ()=>{ reject(new Error('تعذر تحميل البيانات')); delete window[cbName]; script.remove(); };
+    document.body.appendChild(script);
+  });
+}
+
+function parseBloggerJson(json){
+  const feed = json.feed || {};
+  const meta = {
+    title: feed.title ? feed.title.$t : "مدونة الأخبار",
+    link: (feed.link ? feed.link.find(l=>l.rel==='alternate') : {}).href || BLOG_URL,
+    description: feed.subtitle ? feed.subtitle.$t : '',
+    updated: feed.updated ? feed.updated.$t : new Date().toISOString()
+  };
+  const entries = (feed.entry || []).map(ent=>{
+    let link = "";
+    if(ent.link && Array.isArray(ent.link)){
+      const alt = ent.link.find(l=>l.rel==='alternate');
+      if(alt) link = alt.href;
+    }
+    const content = ent.content ? ent.content.$t : (ent.summary ? ent.summary.$t : '');
+    const author = (ent.author && ent.author[0] && ent.author[0].name && ent.author[0].name.$t) || '';
+    const pubDate = ent.published ? ent.published.$t : new Date().toISOString();
+    return {title:ent.title.$t, link, content, author, pubDate};
+  });
+  return {meta, entries};
+}
+
+generateBtn.addEventListener('click', async ()=>{
+  xmlOut.textContent = "جاري إنشاء الخلاصة...";
+  generateBtn.disabled = true;
+  downloadBtn.disabled = true;
+  viewBtn.disabled = true;
+  cardsContainer.innerHTML = "";
+
+  const url = `${BLOG_URL}/feeds/posts/default/-/${encodeURIComponent(LABEL)}?alt=json-in-script&max-results=${MAX_RESULTS}`;
+  try{
+    const json = await fetchJSONP(url);
+    const {meta, entries} = parseBloggerJson(json);
+    const rss = buildRSS(meta, entries);
+    xmlOut.textContent = rss;
+
+    const {url:blobUrl, revoke} = makeBlobDownload(rss);
+
+    downloadBtn.disabled = false;
+    downloadBtn.onclick = ()=>{ const a=document.createElement('a'); a.href=blobUrl; a.download='feed.xml'; a.click(); setTimeout(()=>revoke(),60000); };
+
+    viewBtn.disabled = false;
+    viewBtn.onclick = ()=>{ const w=window.open(); w.document.write('<pre>'+escapeXml(rss)+'</pre>'); w.document.close(); };
+
+    // عرض المقالات كبطاقات
+    entries.forEach(e=>{
+      const card = document.createElement('div');
+      card.className = 'card';
+      card.innerHTML = `<h3>${e.title}</h3>
+                        <p>الكاتب: ${e.author || 'غير محدد'}</p>
+                        <p>تاريخ النشر: ${new Date(e.pubDate).toLocaleString()}</p>
+                        <a href="${e.link}" target="_blank">اقرأ المزيد</a>`;
+      cardsContainer.appendChild(card);
+    });
+
+  }catch(e){
+    xmlOut.textContent = 'حدث خطأ: '+e.message;
+  }finally{
+    generateBtn.disabled = false;
+  }
+});
+})();
+</script>
+</body>
+</html>
